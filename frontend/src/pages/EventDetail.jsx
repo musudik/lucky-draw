@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { eventsAPI, sponsorsAPI, prizesAPI } from '../api/api';
+import { eventsAPI, sponsorsAPI, prizesAPI, baseURL } from '../api/api';
 import * as XLSX from 'xlsx';
 
 const RANK_LABELS = { 1: '1st Place', 2: '2nd Place', 3: '3rd Place' };
@@ -30,7 +30,7 @@ function useQRBlob(eventId) {
   useEffect(() => {
     if (!eventId) return;
     const token = localStorage.getItem('ld_token');
-    fetch(`/api/events/${eventId}/qr`, {
+    fetch(`${baseURL}/events/${eventId}/qr`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {

@@ -1,8 +1,9 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api',
-});
+export const baseURL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api';
+console.log('[API] baseURL:', baseURL, '| VITE_API_URL:', import.meta.env.VITE_API_URL);
+
+const api = axios.create({ baseURL });
 
 // Attach JWT to every request automatically
 api.interceptors.request.use((config) => {
@@ -26,7 +27,7 @@ export const eventsAPI = {
   delete: (id) => api.delete(`/events/${id}`),
   end: (id) => api.post(`/events/${id}/end`),
   reopen: (id) => api.post(`/events/${id}/reopen`),
-  qrUrl: (id) => `/api/events/${id}/qr`,
+  qrUrl: (id) => `${baseURL}/events/${id}/qr`,
   participants: (id) => api.get(`/events/${id}/participants`),
   winners: (id) => api.get(`/events/${id}/winners`),
   deleteWinner: (eventId, winnerId) => api.delete(`/events/${eventId}/winners/${winnerId}`),
