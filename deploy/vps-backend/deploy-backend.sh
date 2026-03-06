@@ -132,9 +132,18 @@ fi
 
 # ── 8. Install NGINX as HTTPS reverse proxy ───────────────────────────────────
 DOMAIN="${BACKEND_DOMAIN:-}"
+# Let's Encrypt never issues certificates for bare IP addresses — detect and skip early
+IP_REGEX='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
 if [[ -z "$DOMAIN" ]]; then
   warn "BACKEND_DOMAIN not set in .env — skipping NGINX / Certbot setup."
   warn "Set BACKEND_DOMAIN=api.yourdomain.com in .env and re-run to enable HTTPS."
+elif [[ "$DOMAIN" =~ $IP_REGEX ]]; then
+  warn "BACKEND_DOMAIN='$DOMAIN' is an IP address — skipping NGINX / Certbot setup."
+  warn "Let's Encrypt does not issue TLS certificates for bare IP addresses."
+  warn "Options for HTTPS without a domain:"
+  warn "  1) Cloudflare Tunnel: cloudflared tunnel --url http://localhost:${PORT:-4000}"
+  warn "  2) Get a domain, set BACKEND_DOMAIN=api.yourdomain.com, and re-run this script."
+  DOMAIN=""
 else
   if ! command -v nginx &>/dev/null; then
     info "Installing NGINX..."

@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: luckydb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-luckydb}
+      POSTGRES_USER: ${DB_USER:-luckyadmin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-luckyadmin} -d ${DB_NAME:-luckydb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ../../backend
+    container_name: lucky-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-luckyadmin}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-luckydb}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 4000
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    name: lucky_draw_pgdata
