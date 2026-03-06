@@ -202,101 +202,118 @@ Browser
 
 ### Part 1 — Set Up PostgreSQL on the VPS
 
-SSH into your VPS and run:
+A self-contained deployment script is provided at `deploy/vps-db/deploy.sh`. It installs Docker if needed, starts a PostgreSQL 15 container bound to `127.0.0.1` only, and configures a daily backup cron job automatically.
+
+**Steps:**
 
 ```bash
-sudo apt update && sudo apt install -y postgresql postgresql-contrib
+# On the VPS
+git clone https://github.com/your-org/lucky-draw.git /opt/lucky-draw
+cd /opt/lucky-draw/deploy/vps-db
 
-# Create database and user
-sudo -u postgres psql <<EOF
-CREATE USER luckyadmin WITH PASSWORD 'strong_password_here';
-CREATE DATABASE luckydb OWNER luckyadmin;
-GRANT ALL PRIVILEGES ON DATABASE luckydb TO luckyadmin;
-EOF
+# Create your .env from the template
+cp .env.example .env
+nano .env          # set DB_PASSWORD and optionally DB_NAME / DB_USER / DB_PORT
 ```
 
-PostgreSQL listens on `localhost:5432` by default — keep it that way (do **not** expose it publicly).
+`deploy/vps-db/.env` keys:
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_NAME` | `luckydb` | PostgreSQL database name |
+| `DB_USER` | `luckyadmin` | PostgreSQL user |
+| `DB_PASSWORD` | *(required)* | **Must be changed** before first run |
+| `DB_PORT` | `5432` | Host port bound to `127.0.0.1` |
+| `BACKUP_DIR` | `/opt/lucky-draw/backups` | Directory for daily `.sql.gz` dumps |
+
+Run the script:
+
+```bash
+chmod +x deploy.sh
+sudo ./deploy.sh
+```
+
+The script will:
+1. Install Docker Engine + Compose plugin if not already present
+2. Validate that `DB_PASSWORD` has been changed from the template default
+3. Pull `postgres:15-alpine` and start the container
+4. Wait for the healthcheck to pass
+5. Install a daily backup cron job (runs at 02:00, retains last 7 dumps)
+6. Print the `DATABASE_URL` ready to paste into the backend `.env`
+
+The script is **idempotent** — safe to re-run for upgrades or restarts.
+
+> **Security:** PostgreSQL is bound to `127.0.0.1:5432` and never exposed on a public interface. No firewall rule is needed for the database port.
+
+Useful commands after deployment:
+
+```bash
+docker ps                                              # confirm container is running
+docker logs luckydb -f                                 # stream Postgres logs
+docker exec -it luckydb psql -U luckyadmin luckydb    # open an interactive psql shell
+sudo /usr/local/bin/lucky-draw-backup.sh               # trigger a manual backup
+ls /opt/lucky-draw/backups/                            # list backup files
+```
 
 ---
 
 ### Part 2 — Deploy the Backend on the VPS
 
-#### Install Node.js and PM2
+> **Important:** The backend must run on the VPS — **not** on Vercel.
+> Vercel is a serverless platform and does not support long-running Express processes or Socket.io WebSocket connections.
+
+A deployment script is provided at `deploy/vps-backend/deploy-backend.sh`. It installs Node.js 20 and PM2, copies the backend source, wires the `.env`, handles PM2 startup persistence, and optionally configures NGINX + Let’s Encrypt HTTPS in one pass.
+
+**Steps:**
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install -g pm2
-```
+cd /opt/lucky-draw/deploy/vps-backend
 
-#### Clone and configure
-
-```bash
-git clone https://github.com/your-org/lucky-draw.git /opt/lucky-draw
-cd /opt/lucky-draw/backend
 cp .env.example .env
-nano .env
+nano .env    # fill in all values (see table below)
 ```
 
-Set the following in `backend/.env`:
+`deploy/vps-backend/.env` keys:
 
-```env
-DATABASE_URL=postgresql://luckyadmin:strong_password_here@localhost:5432/luckydb
-JWT_SECRET=a-very-long-random-secret-at-least-64-chars
-PORT=4000
-FRONTEND_URL=https://your-app.vercel.app
-```
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string — use `127.0.0.1` if the DB is on the same VPS |
+| `JWT_SECRET` | Long random string — generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
+| `PORT` | Port the backend listens on (default: `4000`) |
+| `FRONTEND_URL` | Your Vercel app URL — controls CORS and Socket.io origin |
+| `BACKEND_DOMAIN` | *(Optional)* Domain for NGINX + Let’s Encrypt (e.g. `api.yourdomain.com`) |
+| `CERTBOT_EMAIL` | *(Optional)* Email for TLS certificate renewal notices |
 
-#### Install dependencies and start with PM2
+Run the script:
 
 ```bash
-npm install --omit=dev
-pm2 start src/index.js --name lucky-draw-api
-pm2 save
-pm2 startup   # follow the printed command to enable auto-start on reboot
+chmod +x deploy-backend.sh
+sudo ./deploy-backend.sh
 ```
 
-#### Expose the backend via NGINX + HTTPS
+The script will:
+1. Install Node.js 20 if not present
+2. Install PM2 globally and configure it to survive reboots
+3. Copy backend source files to `/opt/lucky-draw/backend`
+4. Install npm production dependencies
+5. Start the API as a PM2 process named `lucky-draw-api`
+6. If `BACKEND_DOMAIN` is set: configure NGINX as a reverse proxy and request a Let’s Encrypt TLS certificate
+7. Print the `VITE_API_URL` value to set in your Vercel environment variables
 
-Install NGINX and Certbot:
+The script is **idempotent** — re-run it after any code change to redeploy.
+
+Useful commands after deployment:
 
 ```bash
-sudo apt install -y nginx certbot python3-certbot-nginx
+pm2 logs lucky-draw-api        # stream live logs
+pm2 status                      # process health
+pm2 restart lucky-draw-api      # restart manually
+sudo ./deploy-backend.sh        # redeploy after pulling new code
 ```
 
-Create `/etc/nginx/sites-available/lucky-draw-api`:
-
-```nginx
-server {
-    listen 80;
-    server_name api.yourdomain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400s;
-    }
-}
-```
-
-Enable the site and get a TLS certificate:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/lucky-draw-api /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d api.yourdomain.com
-```
-
-The backend is now reachable at `https://api.yourdomain.com`.
-
-> **Socket.io note:** The `proxy_set_header Upgrade` and `Connection "upgrade"` directives above are required for WebSocket connections (live draw) to work through NGINX.
+> **Socket.io:** The NGINX config written by the script includes the `Upgrade` / `Connection: upgrade` headers required for WebSocket connections (live draw screen).
 
 ---
-
 ### Part 3 — Deploy the Frontend on Vercel
 
 #### Option A — Vercel CLI
