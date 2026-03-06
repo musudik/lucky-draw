@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import WheelCanvas from '../components/WheelCanvas';
 import { useConfetti } from '../components/Confetti';
-import { eventsAPI } from '../api/api';
+import { eventsAPI, baseURL } from '../api/api';
 
 const RANK_EMOJI = { 1: '🥇', 2: '🥈', 3: '🥉' };
 const RANK_LABEL = { 1: '1st Place', 2: '2nd Place', 3: '3rd Place' };
@@ -24,7 +23,6 @@ export default function DrawScreen() {
   const [error, setError] = useState('');
 
   const [confettiRef, fireConfetti] = useConfetti();
-  const socketRef = useRef(null);
 
   // Load event, participants, prizes, existing winners
   useEffect(() => {
@@ -32,7 +30,7 @@ export default function DrawScreen() {
       eventsAPI.get(id),
       eventsAPI.participants(id),
       eventsAPI.winners(id),
-      fetch(`/api/events/${id}/prizes`, {
+      fetch(`${baseURL}/events/${id}/prizes`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('ld_token')}` },
       }).then((r) => r.json()),
     ]).then(([ev, pa, wi, pr]) => {
@@ -45,40 +43,6 @@ export default function DrawScreen() {
       setWinners(wi.data);
       setPrizes(Array.isArray(pr) ? pr : []);
     });
-  }, [id]);
-
-  // Socket.io connection — join event room
-  useEffect(() => {
-    const socket = io({ path: '/socket.io' });
-    socketRef.current = socket;
-    socket.emit('join:event', id);
-
-    socket.on('draw:winner', (data) => {
-      if (!data || !data.winner) return;
-      const { winner, prize } = data;
-      setWinners((prev) => {
-        if (prev.find((w) => w.participant_id === winner.participant_id)) return prev;
-        return [
-          ...prev,
-          {
-            id: winner.id,
-            participant_id: winner.participant_id,
-            participant_name: winner.participant_name,
-            rank: prize?.rank ?? prev.length + 1,
-            prize_description: prize?.description,
-            sponsor_name: prize?.sponsor_name,
-            sponsor_logo: prize?.sponsor_logo,
-          },
-        ];
-      });
-      setActiveParticipants((prev) => prev.filter((p) => p.id !== winner.participant_id));
-      fireConfetti();
-    });
-
-    return () => {
-      socket.emit('leave:event', id);
-      socket.disconnect();
-    };
   }, [id]);
 
   const spinWheel = useCallback(async () => {
@@ -118,9 +82,28 @@ export default function DrawScreen() {
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-        // Wheel stopped — now call API to record winner
+  // Wheel stopped — call API and update state from HTTP response
         eventsAPI.draw(id)
-          .then(() => { /* socket event handles state update */ })
+          .then((res) => {
+            const { winner, prize } = res.data;
+            setWinners((prev) => {
+              if (prev.find((w) => w.participant_id === winner.participant_id)) return prev;
+              return [
+                ...prev,
+                {
+                  id: winner.id,
+                  participant_id: winner.participant_id,
+                  participant_name: winner.participant_name,
+                  rank: prize?.rank ?? prev.length + 1,
+                  prize_description: prize?.description,
+                  sponsor_name: prize?.sponsor_name,
+                  sponsor_logo: prize?.sponsor_logo,
+                },
+              ];
+            });
+            setActiveParticipants((prev) => prev.filter((p) => p.id !== winner.participant_id));
+            fireConfetti();
+          })
           .catch((err) => {
             setError(err.response?.data?.error || 'Draw failed');
           })
