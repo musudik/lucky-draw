@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { baseURL } from '../api/api';
 
 const FAMILY_STATUS_OPTIONS = [
   'Single',
@@ -93,7 +94,7 @@ export default function Register() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/participants', {
+      const res = await fetch(`${baseURL}/participants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ qr_token: qrToken, ...form }),
