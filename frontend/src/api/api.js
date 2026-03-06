@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const baseURL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api';
+export const baseURL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://lucky-draw-backend-mu.vercel.app/api';
 console.log('[API] baseURL:', baseURL, '| VITE_API_URL:', import.meta.env.VITE_API_URL);
 
 const api = axios.create({ baseURL });
