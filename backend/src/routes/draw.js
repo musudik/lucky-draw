@@ -71,7 +71,7 @@ module.exports = (io) => {
       };
 
       // Broadcast to all clients watching this event's draw screen
-      io.to(`event:${eventId}`).emit('draw:winner', response);
+      if (io) io.to(`event:${eventId}`).emit('draw:winner', response);
 
       res.json(response);
     } catch (err) {

@@ -7,6 +7,10 @@ services:
       POSTGRES_DB: ${DB_NAME:-luckydb}
       POSTGRES_USER: ${DB_USER:-luckyadmin}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      # Exposed publicly so Vercel backend can connect.
+      # Protect with a strong DB_PASSWORD — do not leave default.
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -15,21 +19,7 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
-    build: ../../backend
-    container_name: lucky-backend
-    restart: unless-stopped
-    ports:
-      - "4000:4000"
-    environment:
-      DATABASE_URL: postgresql://${DB_USER:-luckyadmin}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-luckydb}
-      JWT_SECRET: ${JWT_SECRET}
-      PORT: 4000
-      FRONTEND_URL: ${FRONTEND_URL}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
 volumes:
   pgdata:
     name: lucky_draw_pgdata
+
