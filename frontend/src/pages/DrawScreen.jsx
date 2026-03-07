@@ -19,8 +19,10 @@ export default function DrawScreen() {
   const rotationRef = useRef(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [currentPointerName, setCurrentPointerName] = useState('...');
-  const [spinOrder, setSpinOrder] = useState('forward'); // 'forward' = 1st→3rd, 'reverse' = 3rd→1st
+  const [spinOrder, setSpinOrder] = useState('forward');
   const [error, setError] = useState('');
+  const [countdown, setCountdown] = useState(null);
+  const countdownRef = useRef(null);
 
   const [confettiRef, fireConfetti] = useConfetti();
 
@@ -50,64 +52,78 @@ export default function DrawScreen() {
     setError('');
     setIsSpinning(true);
 
-    const total = activeParticipants.length;
-    // Pick a random index to land on (visual only; actual winner comes from server)
-    const targetIdx = Math.floor(Math.random() * total);
-    const arcDeg = 360 / total;
-    const sliceCenter = targetIdx * arcDeg + arcDeg / 2;
+    // ── Step 1: fetch the actual winner BEFORE the animation starts ──────────
+    let winnerData;
+    try {
+      const res = await eventsAPI.draw(id);
+      winnerData = res.data;
+    } catch (err) {
+      setError(err.response?.data?.error || 'Draw failed');
+      setIsSpinning(false);
+      return;
+    }
 
-    const spins = 5;
+    const { winner, prize } = winnerData;
+    const total = activeParticipants.length;
+    const arcDeg = 360 / total;
+
+    // ── Step 2: find winner's segment and calculate final rotation ───────────
+    const winnerIdx = activeParticipants.findIndex((p) => p.id === winner.participant_id);
+    const targetIdx = winnerIdx >= 0 ? winnerIdx : 0;
+    const sliceCenter = targetIdx * arcDeg + arcDeg / 2;
+    const spins = 8;
     const startRot = rotationRef.current;
-    const k = spins + Math.ceil(startRot / 360);
+    const k = spins + Math.ceil(Math.abs(startRot) / 360);
     const finalRotation = 270 + 360 * k - sliceCenter;
 
-    const duration = 8000;
+    // ── Step 3: start 10-second countdown ────────────────────────────────────
+    const DURATION = 10000;
     const startTime = performance.now();
+    setCountdown(10);
+    let remaining = 10;
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      setCountdown(remaining > 0 ? remaining : null);
+      if (remaining <= 0) clearInterval(countdownRef.current);
+    }, 1000);
 
+    // ── Step 4: animate wheel to the winner's segment ────────────────────────
     const animate = (now) => {
       const elapsed = now - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+      const progress = Math.min(elapsed / DURATION, 1);
       const ease = 1 - Math.pow(1 - progress, 5);
       const currentR = startRot + (finalRotation - startRot) * ease;
       rotationRef.current = currentR;
       setRotation(currentR);
 
-      // Update pointer label
-      const segDeg = 360 / total;
       const normalised = ((currentR % 360) + 360) % 360;
-      let angle = (270 - normalised + 360) % 360;
-      const idx = Math.floor(angle / segDeg) % total;
+      const angle = (270 - normalised + 360) % 360;
+      const idx = Math.floor(angle / arcDeg) % total;
       if (activeParticipants[idx]) setCurrentPointerName(activeParticipants[idx].name);
 
       if (progress < 1) {
         requestAnimationFrame(animate);
       } else {
-  // Wheel stopped — call API and update state from HTTP response
-        eventsAPI.draw(id)
-          .then((res) => {
-            const { winner, prize } = res.data;
-            setWinners((prev) => {
-              if (prev.find((w) => w.participant_id === winner.participant_id)) return prev;
-              return [
-                ...prev,
-                {
-                  id: winner.id,
-                  participant_id: winner.participant_id,
-                  participant_name: winner.participant_name,
-                  rank: prize?.rank ?? prev.length + 1,
-                  prize_description: prize?.description,
-                  sponsor_name: prize?.sponsor_name,
-                  sponsor_logo: prize?.sponsor_logo,
-                },
-              ];
-            });
-            setActiveParticipants((prev) => prev.filter((p) => p.id !== winner.participant_id));
-            fireConfetti();
-          })
-          .catch((err) => {
-            setError(err.response?.data?.error || 'Draw failed');
-          })
-          .finally(() => setIsSpinning(false));
+        clearInterval(countdownRef.current);
+        setCountdown(null);
+        setWinners((prev) => {
+          if (prev.find((w) => w.participant_id === winner.participant_id)) return prev;
+          return [
+            ...prev,
+            {
+              id: winner.id,
+              participant_id: winner.participant_id,
+              participant_name: winner.participant_name,
+              rank: prize?.rank ?? prev.length + 1,
+              prize_description: prize?.description,
+              sponsor_name: prize?.sponsor_name,
+              sponsor_logo: prize?.sponsor_logo,
+            },
+          ];
+        });
+        setActiveParticipants((prev) => prev.filter((p) => p.id !== winner.participant_id));
+        fireConfetti();
+        setIsSpinning(false);
       }
     };
 
@@ -183,8 +199,36 @@ export default function DrawScreen() {
               <span className="font-bold text-yellow-400 text-2xl font-mono">{currentPointerName}</span>
             </div>
 
-            {/* Wheel */}
-            <WheelCanvas participants={activeParticipants} rotation={rotation} />
+            {/* Wheel with flashing countdown overlay */}
+            <div className="relative">
+              <WheelCanvas participants={activeParticipants} rotation={rotation} />
+              {countdown !== null && (
+                <>
+                  <style>{`
+                    @keyframes flashCount {
+                      from { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+                      to   { opacity: 0.25; transform: translate(-50%, -50%) scale(0.9); }
+                    }
+                  `}</style>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '50%', left: '50%',
+                      animation: 'flashCount 0.5s ease-in-out infinite alternate',
+                      fontSize: '7rem',
+                      fontWeight: 900,
+                      color: '#fff',
+                      textShadow: '0 0 30px rgba(250,204,21,1), 0 0 60px rgba(250,204,21,0.6)',
+                      pointerEvents: 'none',
+                      lineHeight: 1,
+                      userSelect: 'none',
+                    }}
+                  >
+                    {countdown}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Sponsor display */}
             {nextPrize?.sponsor_name && (
