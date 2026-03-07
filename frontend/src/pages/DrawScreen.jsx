@@ -68,7 +68,7 @@ export default function DrawScreen() {
     const arcDeg = 360 / total;
 
     // ── Step 2: find winner's segment and calculate final rotation ───────────
-    const winnerIdx = activeParticipants.findIndex((p) => p.id === winner.participant_id);
+    const winnerIdx = activeParticipants.findIndex((p) => Number(p.id) === Number(winner.participant_id));
     const targetIdx = winnerIdx >= 0 ? winnerIdx : 0;
     const sliceCenter = targetIdx * arcDeg + arcDeg / 2;
     const spins = 8;
@@ -203,30 +203,24 @@ export default function DrawScreen() {
             <div className="relative">
               <WheelCanvas participants={activeParticipants} rotation={rotation} />
               {countdown !== null && (
-                <>
-                  <style>{`
-                    @keyframes flashCount {
-                      from { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
-                      to   { opacity: 0.25; transform: translate(-50%, -50%) scale(0.9); }
-                    }
-                  `}</style>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '50%', left: '50%',
-                      animation: 'flashCount 0.5s ease-in-out infinite alternate',
-                      fontSize: '7rem',
-                      fontWeight: 900,
-                      color: '#fff',
-                      textShadow: '0 0 30px rgba(250,204,21,1), 0 0 60px rgba(250,204,21,0.6)',
-                      pointerEvents: 'none',
-                      lineHeight: 1,
-                      userSelect: 'none',
-                    }}
-                  >
-                    {countdown}
-                  </div>
-                </>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%', left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: 100,
+                    animation: 'flashCount 0.5s ease-in-out infinite alternate',
+                    fontSize: '9rem',
+                    fontWeight: 900,
+                    color: '#fff',
+                    textShadow: '0 0 40px rgba(250,204,21,1), 0 0 80px rgba(250,204,21,0.7)',
+                    pointerEvents: 'none',
+                    lineHeight: 1,
+                    userSelect: 'none',
+                  }}
+                >
+                  {countdown}
+                </div>
               )}
             </div>
 
