@@ -57,6 +57,43 @@ function SectionTitle({ children }) {
   );
 }
 
+// ── German-standard field validators ─────────────────────────────────────────
+
+// Full name: at least two words, letters only including German umlauts / ß
+const validateName = (value) => {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Full name is required';
+  if (!/^[a-zA-ZäöüÄÖÜß\-'\s]+$/.test(trimmed))
+    return 'Name may only contain letters, hyphens, and spaces';
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return 'Please enter your first and last name';
+  if (parts.some((p) => p.length < 2)) return 'Each part of your name must be at least 2 characters';
+  return null;
+};
+
+// Email: standard RFC-compliant format
+const validateEmail = (value) => {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Email address is required';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed))
+    return 'Please enter a valid email address (e.g. name@example.de)';
+  return null;
+};
+
+// Phone: German format — local (01xx…) or international (+49 / 0049)
+// Accepts spaces, hyphens, parentheses as formatting characters.
+// Valid examples: +49 151 12345678 · 0151 12345678 · 0049 30 12345678
+const validatePhone = (value) => {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Mobile number is required';
+  const digits = trimmed.replace(/[\s\-\(\)\/]/g, '');
+  const intl  = /^(\+49|0049)[1-9]\d{8,11}$/.test(digits);
+  const local = /^0[1-9]\d{8,11}$/.test(digits);
+  if (!intl && !local)
+    return 'Please enter a valid German phone number (e.g. +49 151 12345678 or 0151 12345678)';
+  return null;
+};
+
 export default function Register() {
   const { qrToken } = useParams();
   const [form, setForm] = useState({
@@ -85,9 +122,9 @@ export default function Register() {
     e.preventDefault();
     setError('');
 
-    if (!form.name.trim()) return setError('Full name is required');
-    if (!form.email.trim()) return setError('Email address is required');
-    if (!form.phone.trim()) return setError('Mobile number is required');
+    const nameErr  = validateName(form.name);   if (nameErr)  return setError(nameErr);
+    const emailErr = validateEmail(form.email);  if (emailErr) return setError(emailErr);
+    const phoneErr = validatePhone(form.phone);  if (phoneErr) return setError(phoneErr);
     if (!form.family_status) return setError('Please select your family status');
     if (form.services_required.length === 0) return setError('Please select at least one service you are interested in');
     if (!form.consent) return setError('Please agree to the consent terms to continue');
@@ -213,7 +250,7 @@ export default function Register() {
                   </label>
                   <input
                     type="tel"
-                    placeholder="+49 1234567890"
+                    placeholder="+49 151 12345678"
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                     className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white placeholder-gray-500 focus:border-yellow-400 outline-none transition"
